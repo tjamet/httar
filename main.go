@@ -3,6 +3,7 @@ package main
 import (
 	"archive/tar"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -48,24 +49,32 @@ func addFileToTarWriter(prefix, filePath string, tarWriter *tar.Writer) error {
 }
 
 func main() {
-	dir, err := ioutil.TempDir("", "files")
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer func() {
-		fmt.Printf("deleting %s\n", dir)
-		err := os.RemoveAll(dir)
+	var listen string
+	var dir string
+	var err error
+	flag.StringVar(&listen, "listen", ":8080", "The address to listen on")
+	flag.StringVar(&dir, "directory", "", "The directory to store files into")
+	flag.Parse()
+	if dir == "" {
+		dir, err = ioutil.TempDir("", "files")
 		if err != nil {
-			fmt.Println(err.Error())
+			log.Fatal(err)
 		}
-	}()
+		defer func() {
+			fmt.Printf("deleting %s\n", dir)
+			err := os.RemoveAll(dir)
+			if err != nil {
+				fmt.Println(err.Error())
+			}
+		}()
+	}
 	os.MkdirAll(dir, 0766)
-	fmt.Println(http.ListenAndServe(":8080", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	fmt.Println(http.ListenAndServe(listen, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
-		if r.Method == "GET" && r.URL.Path == "/" {
+		if r.Method == "GET" {
 			tarWriter := tar.NewWriter(w)
 			defer tarWriter.Close()
-			err := filepath.Walk(dir, func(path string, info os.FileInfo, err error) error {
+			err := filepath.Walk(dir+r.URL.Path, func(path string, info os.FileInfo, err error) error {
 				if !info.IsDir() {
 					return addFileToTarWriter(dir, path, tarWriter)
 				}
